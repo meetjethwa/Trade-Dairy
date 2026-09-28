@@ -373,28 +373,59 @@ export default function DashboardPage() {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    const W = canvas.width = canvas.offsetWidth;
-    const H = canvas.height = 160;
+    const dpr = window.devicePixelRatio || 1;
+    const W = canvas.offsetWidth;
+    const H = canvas.offsetHeight;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    ctx.scale(dpr, dpr);
     ctx.clearRect(0, 0, W, H);
     const sorted = [...trades].sort((a, b) => new Date(a.exitDate || a.date) - new Date(b.exitDate || b.date));
-    let running = 0;
-    const points = [0, ...sorted.map(t => { running += calcPnL(t); return running; })];
-    const min = Math.min(...points); const max = Math.max(...points);
-    const range = max - min || 1;
-    const pad = 20;
-    const xs = points.map((_, i) => pad + (i / (points.length - 1)) * (W - pad * 2));
-    const ys = points.map(v => H - pad - ((v - min) / range) * (H - pad * 2));
-    const grad = ctx.createLinearGradient(0, 0, 0, H);
-    grad.addColorStop(0, 'rgba(0,212,170,0.18)');
-    grad.addColorStop(1, 'rgba(0,212,170,0)');
+    let running = 10000;
+    const points = [10000, ...sorted.map(t => { running += calcPnL(t); return running; })];
+    const min = Math.min(10000, ...points); const max = Math.max(10000, ...points);
+    const range = max - min || Math.max(Math.abs(max), 1);
+    const pad = { top: 18, right: 12, bottom: 30, left: 12 };
+    const chartH = H - pad.top - pad.bottom;
+    const xs = points.map((_, i) => pad.left + (i / Math.max(points.length - 1, 1)) * (W - pad.left - pad.right));
+    const ys = points.map(v => pad.top + ((max - v) / range) * chartH);
+    const investedY = pad.top + ((max - 10000) / range) * chartH;
+    ctx.font = '10px JetBrains Mono, monospace';
+    ctx.fillStyle = 'rgba(145,163,184,.65)';
+    ctx.textBaseline = 'middle';
+    [0, 0.5, 1].forEach(fraction => {
+      const y = pad.top + chartH * fraction;
+      ctx.beginPath(); ctx.setLineDash([3, 6]); ctx.strokeStyle = 'rgba(145,163,184,.13)'; ctx.lineWidth = 1;
+      ctx.moveTo(pad.left, y); ctx.lineTo(W - pad.right, y); ctx.stroke();
+    });
+    ctx.setLineDash([]);
+    ctx.beginPath(); ctx.strokeStyle = 'rgba(145,163,184,.27)'; ctx.lineWidth = 1;
+    ctx.moveTo(pad.left, investedY); ctx.lineTo(W - pad.right, investedY); ctx.stroke();
+    const color = points[points.length - 1] >= 0 ? '#00d4aa' : '#ff6b6b';
+    const grad = ctx.createLinearGradient(0, pad.top, 0, H - pad.bottom);
+    grad.addColorStop(0, points[points.length - 1] >= 0 ? 'rgba(0,212,170,.24)' : 'rgba(255,107,107,.22)');
+    grad.addColorStop(1, 'rgba(8,16,30,0)');
+    const curveArea = (fillToY) => {
+      ctx.beginPath(); ctx.moveTo(xs[0], ys[0]);
+      xs.forEach((x, i) => { if (i > 0) ctx.lineTo(x, ys[i]); });
+      ctx.lineTo(xs[xs.length - 1], fillToY); ctx.lineTo(xs[0], fillToY); ctx.closePath();
+    };
+    ctx.save(); ctx.beginPath(); ctx.rect(0, pad.top, W, Math.max(0, investedY - pad.top)); ctx.clip();
+    curveArea(H - pad.bottom); ctx.fillStyle = grad; ctx.fill(); ctx.restore();
+    ctx.save(); ctx.beginPath(); ctx.rect(0, investedY, W, Math.max(0, H - pad.bottom - investedY)); ctx.clip();
+    curveArea(investedY); ctx.fillStyle = 'rgba(255,107,107,.28)'; ctx.fill(); ctx.restore();
     ctx.beginPath(); ctx.moveTo(xs[0], ys[0]);
     xs.forEach((x, i) => { if (i > 0) ctx.lineTo(x, ys[i]); });
-    ctx.lineTo(xs[xs.length - 1], H); ctx.lineTo(xs[0], H);
-    ctx.closePath(); ctx.fillStyle = grad; ctx.fill();
-    ctx.beginPath(); ctx.moveTo(xs[0], ys[0]);
-    xs.forEach((x, i) => { if (i > 0) ctx.lineTo(x, ys[i]); });
-    ctx.strokeStyle = '#00d4aa'; ctx.lineWidth = 2; ctx.stroke();
-    xs.forEach((x, i) => { ctx.beginPath(); ctx.arc(x, ys[i], 3, 0, Math.PI * 2); ctx.fillStyle = '#00d4aa'; ctx.fill(); });
+    ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.shadowColor = color; ctx.shadowBlur = 10; ctx.stroke(); ctx.shadowBlur = 0;
+    if (xs.length <= 18) xs.forEach((x, i) => { ctx.beginPath(); ctx.arc(x, ys[i], i === xs.length - 1 ? 4 : 2.5, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill(); });
+    const lastX = xs[xs.length - 1], lastY = ys[ys.length - 1];
+    ctx.beginPath(); ctx.arc(lastX, lastY, 7, 0, Math.PI * 2); ctx.fillStyle = color === '#00d4aa' ? 'rgba(0,212,170,.18)' : 'rgba(255,107,107,.18)'; ctx.fill();
+    ctx.beginPath(); ctx.arc(lastX, lastY, 3.5, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill();
+    const firstDate = sorted[0]?.exitDate || sorted[0]?.date;
+    const lastDate = sorted[sorted.length - 1]?.exitDate || sorted[sorted.length - 1]?.date;
+    ctx.textBaseline = 'alphabetic'; ctx.fillStyle = 'rgba(145,163,184,.7)';
+    ctx.textAlign = 'left'; ctx.fillText(new Date(firstDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), pad.left, H - 7);
+    ctx.textAlign = 'right'; ctx.fillText(new Date(lastDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), W - pad.right, H - 7);
   };
 
   const handleLogout = () => { logout(); navigate('/'); };
@@ -578,8 +609,8 @@ export default function DashboardPage() {
         .db-card::before{content:'';position:absolute;top:0;left:20%;right:20%;height:1px;background:linear-gradient(to right,transparent,var(--border2),transparent);}
         .db-card-title{font-size:14px;font-weight:500;color:var(--txt);margin-bottom:1rem;display:flex;align-items:center;justify-content:space-between;font-family:'Outfit',sans-serif;}
         .db-card-title span{font-size:11px;color:var(--txt3);font-family:'JetBrains Mono',monospace;}
-        .db-canvas-wrap{position:relative;height:160px;}
-        .db-canvas-wrap canvas{width:100%;height:160px;display:block;}
+        .db-canvas-wrap{position:relative;height:260px;padding:12px 14px 6px;background:linear-gradient(145deg,rgba(15,31,49,.72),rgba(8,16,30,.35));border:1px solid rgba(122,154,184,.12);border-radius:12px;overflow:hidden;}
+        .db-canvas-wrap canvas{width:100%;height:100%;display:block;}
         .db-wl{display:flex;align-items:center;gap:1.5rem;margin-top:0.5rem;}
         .db-donut{position:relative;width:100px;height:100px;}
         .db-donut svg{transform:rotate(-90deg);}

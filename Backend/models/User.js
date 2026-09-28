@@ -40,6 +40,10 @@ const userSchema = new mongoose.Schema({
     required: true,
     minlength: 6,
   },
+  passwordResetOtpHash: { type: String, default: undefined },
+  passwordResetOtpExpiresAt: { type: Date, default: undefined },
+  passwordResetOtpRequestedAt: { type: Date, default: undefined },
+  passwordResetOtpAttempts: { type: Number, default: 0 },
 }, { timestamps: true });
 
 userSchema.pre('save', async function (next) {
